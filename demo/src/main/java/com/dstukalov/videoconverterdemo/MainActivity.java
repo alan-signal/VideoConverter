@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
@@ -34,6 +35,7 @@ import com.dstukalov.videoconverter.BadMediaException;
 import com.dstukalov.videoconverter.MediaConversionException;
 import com.dstukalov.videoconverter.MediaConverter;
 import com.innovattic.rangeseekbar.RangeSeekBar;
+import com.dstukalov.videoconverterdemo.newfd.EmptyProxyFileDescriptor;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -41,6 +43,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -589,12 +592,21 @@ public class MainActivity extends AppCompatActivity {
         final MediaConverter mConverter;
         long mStartTime;
         WakeLock mWakeLock;
+        RandomAccessFile randomAccessFile;
 
         ConversionTask(final @NonNull File input, final @NonNull File output, final long timeFrom, final long timeTo, final @NonNull ConversionParameters conversionParameters) throws FileNotFoundException {
 
+            randomAccessFile = new RandomAccessFile(output, "rw");
+
             mConverter = new MediaConverter();
             mConverter.setInput(input);
-            mConverter.setOutput(output);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mConverter.setOutput(EmptyProxyFileDescriptor.newX(MainActivity.this));
+            } else{
+                mConverter.setOutput(output);
+            }
+
             mConverter.setTimeRange(timeFrom, timeTo);
             mConverter.setVideoResolution(conversionParameters.mVideoResolution);
             mConverter.setVideoCodec(conversionParameters.mVideoCodec);
@@ -652,24 +664,31 @@ public class MainActivity extends AppCompatActivity {
         protected void onPostExecute(final Boolean result) {
             mConversionTask = null;
 
+            try {
+                randomAccessFile.close();
+                Log.d("ALAN", "Closed file");
+            } catch (IOException e) {
+                Log.w("ALAN", "Close file", e);
+            }
+
             if (Boolean.TRUE.equals(result)) {
                 mConverted = true;
                 final Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
                 intent.setData(Uri.fromFile(mOutputFile));
                 getApplicationContext().sendBroadcast(intent);
 
-                final MediaMetadataRetriever mediaMetadataRetriever = new MediaMetadataRetriever();
+//                final MediaMetadataRetriever mediaMetadataRetriever = new MediaMetadataRetriever();
+//
+//                mediaMetadataRetriever.setDataSource(mOutputFile.getAbsolutePath());
+//                final String duration = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+//                final String width = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+//                final String height = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+//
+//                mediaMetadataRetriever.release();
 
-                mediaMetadataRetriever.setDataSource(mOutputFile.getAbsolutePath());
-                final String duration = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                final String width = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
-                final String height = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
-
-                mediaMetadataRetriever.release();
-
-                mOutputInfoView.setText(getString(R.string.video_info, width, height,
-                        DateUtils.formatElapsedTime(duration == null ? 0 : (Long.parseLong( duration) / 1000)),
-                        Formatter.formatShortFileSize(MainActivity.this, mOutputFile.length())));
+//                mOutputInfoView.setText(getString(R.string.video_info, width, height,
+//                        DateUtils.formatElapsedTime(duration == null ? 0 : (Long.parseLong( duration) / 1000)),
+//                        Formatter.formatShortFileSize(MainActivity.this, mOutputFile.length())));
 
             } else {
                 Toast.makeText(getBaseContext(), R.string.conversion_failed, Toast.LENGTH_LONG).show();
